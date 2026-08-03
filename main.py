@@ -30,8 +30,7 @@ def main():
     # Step 3: Embeddings & FAISS Indexing
     print("--- 3. Embedding Chunks & Indexing into FAISS Vector Store ---")
     embedder = Embedder()
-    chunk_texts = [c.text for c in chunks]
-    embeddings = embedder.embed_texts(chunk_texts)
+    embeddings = [embedder.embed_chunk(c.text, c.metadata) for c in chunks]
 
     vector_store = FAISSVectorStore(dimension=embedder.dimension, metric="cosine")
     vector_store.add_chunks(chunks, embeddings)

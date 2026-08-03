@@ -47,8 +47,8 @@ class MultimodalChunker:
         text_strategy: str = "recursive",  # "recursive" | "sliding_window" | "fixed"
         table_strategy: str = "atomic",     # "atomic" | "row_wise"
         image_strategy: str = "multimodal", # "multimodal"
-        separators: Optional[List[str]] = None,
-    ):
+        separators: Optional[List[str]] = None,):
+
         self.chunk_size = chunk_size
         self.chunk_overlap = max(0, min(chunk_overlap, chunk_size - 1))
         self.text_strategy = text_strategy.lower()
@@ -58,9 +58,8 @@ class MultimodalChunker:
 
     def chunk_documents(
         self,
-        documents: Union[List[Document], List[Dict[str, Any]]],
-        to_dict: bool = False,
-    ) -> Union[List[Chunk], List[Dict[str, Any]]]:
+        documents: Union[List[Document], List[Dict[str, Any]]],   # dataclass that is obtained from parser 
+        to_dict: bool = False,) -> Union[List[Chunk], List[Dict[str, Any]]]:
         """
         Processes a list of parsed Document objects and splits them into enriched RAG Chunks.
         """
@@ -71,6 +70,8 @@ class MultimodalChunker:
                 doc_objects.append(Document(page_content=d.get("page_content", ""), metadata=d.get("metadata", {})))
             else:
                 doc_objects.append(d)
+        #---------------------------------------------------------------------------------------------------------------
+
 
         chunks: List[Chunk] = []
         global_chunk_idx = 1
@@ -253,8 +254,7 @@ def chunk_documents(
     chunk_overlap: int = 50,
     text_strategy: str = "recursive",
     table_strategy: str = "atomic",
-    to_dict: bool = False,
-) -> Union[List[Chunk], List[Dict[str, Any]]]:
+    to_dict: bool = False,) -> Union[List[Chunk], List[Dict[str, Any]]]:
     """
     Convenience function to chunk documents using standard settings.
     """
