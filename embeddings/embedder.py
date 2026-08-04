@@ -26,7 +26,7 @@ def _detect_device() -> str:    # check the availability of cuda or other GPU de
 
 class Embedder:
     """
-    True Multimodal Embedder using CLIP (clip-ViT-B-32).
+    True Multimodal Embedder using CLIP (clip-ViT-B-32). encoder only model 
 
     Encodes text and images into the SAME joint 512-dimensional vector space,
     enabling cross-modal similarity search (text ↔ image retrieval).
@@ -34,6 +34,13 @@ class Embedder:
     - Text  → CLIP Text Encoder  → 512d vector
     - Image → CLIP Vision Encoder (ViT) → 512d vector
     - Both vectors are directly comparable via cosine similarity.
+    """
+
+    """
+    modularity - text , tables , images
+    granularity -> text ( 50 - 60 words)
+    training objective  -> self-supervised contrastive learning ( infoNCE loss)
+    alignment -> cross-modal alignment  ( dual projection heads)
     """
 
     def __init__(

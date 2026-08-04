@@ -2,6 +2,7 @@ from pathlib import Path
 from parser import parse_file
 from chunker import chunk_documents
 from embeddings import Embedder
+from similarity_metrics import compute_similarity
 from vector_store import FAISSVectorStore
 
 
@@ -27,14 +28,15 @@ def main():
     chunks = chunk_documents(documents, chunk_size=400, chunk_overlap=40)
     print(f"Generated {len(chunks)} RAG chunks.\n")
 
-    # Step 3: Embeddings & FAISS Indexing
-    print("--- 3. Embedding Chunks & Indexing into FAISS Vector Store ---")
+    # Step 3: Embeddings & FAISS Indexing (Configurable Metric: 'cosine' | 'dot_product' | 'l2' | 'l1')
+    selected_metric = "cosine"  # Easily change to 'dot_product', 'l2', or 'l1'
+    print(f"--- 3. Embedding Chunks & Indexing into FAISS (Metric: '{selected_metric}') ---")
     embedder = Embedder()
     embeddings = [embedder.embed_chunk(c.text, c.metadata) for c in chunks]
 
-    vector_store = FAISSVectorStore(dimension=embedder.dimension, metric="cosine")
+    vector_store = FAISSVectorStore(dimension=embedder.dimension, metric=selected_metric)
     vector_store.add_chunks(chunks, embeddings)
-    print(f"Indexed {len(chunks)} chunks into FAISS (Vector Dimension: {embedder.dimension}).\n")
+    print(f"Indexed {len(chunks)} chunks into FAISS (Dimension: {embedder.dimension}, Metric: '{selected_metric}').\n")
 
     # Step 4: Vector Similarity Query
     query = "How does the multimodal PDF parser handle tables?"

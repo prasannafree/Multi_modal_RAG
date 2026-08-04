@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import numpy as np
 from chunker import Chunk
+from similarity_metrics import compute_similarity, cosine_similarity
 
 
 @dataclass
@@ -89,8 +90,10 @@ class FAISSVectorStore:
         if self.index is not None:
             self.index.add(vecs)
         
-        for c in chunks:
-            self.payloads.append(c.to_dict())
+        for c, vec in zip(chunks, vecs):
+            payload_dict = c.to_dict()
+            payload_dict["vector"] = vec.tolist()
+            self.payloads.append(payload_dict)
 
     def search(
         self,
@@ -149,7 +152,7 @@ class FAISSVectorStore:
 
             return results
 
-        # 2. Numpy Fallback vector search
+        # 2. NumPy Fallback vector search using similarity_metrics
         return self._numpy_search(q_vec[0], top_k, filter_metadata)
 
     def save(self, dir_path: Union[str, Path]):
@@ -189,19 +192,29 @@ class FAISSVectorStore:
         top_k: int,
         filter_metadata: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
-        """Fallback NumPy vector search."""
-        results = []
+        """Fallback NumPy vector search calculated via similarity_metrics engine."""
+        scored_results = []
         for payload in self.payloads:
             meta = payload.get("metadata", {})
             if filter_metadata and not self._matches_filter(meta, filter_metadata):
                 continue
-            # Return match payload
-            results.append(
+            
+            chunk_vec = payload.get("vector")
+            if chunk_vec is not None:
+                score = compute_similarity(query_vec, chunk_vec, metric=self.metric)
+            else:
+                score = 1.0
+
+            scored_results.append(
                 SearchResult(
                     chunk_id=payload.get("chunk_id", ""),
-                    score=1.0,
+                    score=score,
                     text=payload.get("text", ""),
                     metadata=meta,
                 )
             )
-        return results[:top_k]
+
+        # Sort: Descending for similarity metrics (cosine, dot_product); Ascending for distance metrics (l2, l1)
+        reverse_sort = self.metric in ["cosine", "dot_product", "ip", "dot"]
+        scored_results.sort(key=lambda r: r.score, reverse=reverse_sort)
+        return scored_results[:top_k]
