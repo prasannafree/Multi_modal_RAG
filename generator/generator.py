@@ -124,7 +124,7 @@ class MultimodalGenerator:
 
     # ---- Provider 2: Local Ollama VLM ----
 
-    def _generate_ollama(self, query: str, prepared_context: PreparedContext) -> str:
+    def _generate_ollama(self, query: str, prepared_context: PreparedContext, chat_history: List[Dict[str, str]] = None) -> str:
         """Generates response using Local Ollama server (e.g. llama3.1:8b, qwen3:8b)."""
         target_model = self.model_name
         if ":" not in target_model and not target_model.endswith(":latest"):
@@ -134,16 +134,18 @@ class MultimodalGenerator:
         vlm_keywords = ["vision", "llava", "bakllava", "moondream", "minicpm-v"]
         is_vlm = any(kw in target_model.lower() for kw in vlm_keywords)
 
-        # System prompt forces the model to answer ONLY from retrieved context
-        system_prompt = (
-            "You are a helpful RAG (Retrieval-Augmented Generation) assistant. "
+        # Combine system instructions and user query into a single user prompt
+        # (This avoids HTTP 500 errors on some vision models that crash on explicit 'system' roles)
+        sys_instructions = (
+            "You are a helpful conversational RAG assistant. "
             "You MUST answer the user's question using ONLY the information provided in the CONTEXT below. "
-            "Do NOT use your own knowledge or training data. "
-            "If the answer is found in the context, provide it clearly and cite the source. "
-            "If the context does not contain the answer, say 'The provided documents do not contain this information.'"
+            "Do NOT use your outside knowledge. "
+            "Answer naturally (e.g. if the document says 'my name is prasanna', you should say 'Your name is Prasanna'). "
+            "If the context does not contain the answer, say 'The provided documents do not contain this information.'\n\n"
         )
-
-        user_prompt = (
+        
+        combined_prompt = (
+            sys_instructions +
             f"CONTEXT (retrieved from documents):\n"
             f"---\n"
             f"{prepared_context.formatted_text}\n"
@@ -174,11 +176,13 @@ class MultimodalGenerator:
 
             endpoint = f"{self.ollama_url}/api/chat"
 
-            # Build messages with system + user roles
-            messages = [
-                {"role": "system", "content": system_prompt},
-            ]
-            user_msg: Dict[str, Any] = {"role": "user", "content": user_prompt}
+            # Build messages array starting with history, then current prompt
+            messages = []
+            if chat_history:
+                messages.extend(chat_history)
+            
+            # Build current user message
+            user_msg: Dict[str, Any] = {"role": "user", "content": combined_prompt}
             if images_b64:
                 user_msg["images"] = images_b64
             messages.append(user_msg)
@@ -207,8 +211,7 @@ class MultimodalGenerator:
                 gen_endpoint = f"{self.ollama_url}/api/generate"
                 gen_payload = {
                     "model": target_model,
-                    "system": system_prompt,
-                    "prompt": user_prompt,
+                    "prompt": combined_prompt,
                     "stream": False,
                 }
                 if images_b64:

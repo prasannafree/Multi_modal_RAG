@@ -107,20 +107,30 @@ def answer_query(
     stage1_pool_size: int = 10,
     stage2_selected_top_n: int = 3,
     verbose: bool = False,
+    chat_history: List[Dict[str, str]] = None,
 ) -> str:
     """
     Runs retrieval, reranking, context preparation, and generation for a single query.
     Returns the generated answer string.
     """
+    # Create a context-aware search query to fix retrieval for follow-up questions
+    search_query = query
+    if chat_history:
+        last_user_msg = next((msg["content"] for msg in reversed(chat_history) if msg["role"] == "user"), "")
+        if last_user_msg:
+            search_query = f"{last_user_msg} | {query}"
+            if verbose:
+                print(f"  [Contextual Search] Augmented Query: '{search_query}'")
+
     # Stage 1: Vector Search
-    query_vec = embedder.embed_text(query)
+    query_vec = embedder.embed_text(search_query)
     candidates = vector_store.search(query_vec, top_k=stage1_pool_size)
 
     if verbose:
         print(f"  [Retrieval] {len(candidates)} candidates from vector search")
 
     # Stage 2: Cross-Encoder Reranking
-    reranked_results = reranker.rerank(query, candidates, top_n=stage2_selected_top_n)
+    reranked_results = reranker.rerank(search_query, candidates, top_n=stage2_selected_top_n)
 
     if verbose:
         print(f"  [Reranking] Top {len(reranked_results)} results selected")
@@ -130,11 +140,16 @@ def answer_query(
 
     # Context Preparation
     context_prep = ContextPreparation(max_context_length=4000, include_metadata_header=True)
-    prepared_context = context_prep.prepare(query, reranked_results)
+    prepared_context = context_prep.prepare(search_query, reranked_results)
 
     # LLM Generation
-    answer = generator.generate(query, prepared_context)
+    # We use a hacky patch here to pass chat history without breaking other providers for now
+    if hasattr(generator, "_generate_ollama") and generator.provider == "ollama":
+        answer = generator._generate_ollama(query, prepared_context, chat_history=chat_history)
+    else:
+        answer = generator.generate(query, prepared_context)
     return answer
+
 
 
 # ---- Single-Shot Pipeline (original behavior) ----
@@ -221,6 +236,8 @@ def run_chat(
     print("  Type your questions below. Type 'quit' or 'exit' to stop.")
     print("==================================================================\n")
 
+    chat_history = []
+
     while True:
         try:
             user_input = input("You: ").strip()
@@ -237,8 +254,12 @@ def run_chat(
         answer = answer_query(
             user_input, embedder, vector_store, generator, reranker,
             stage1_pool_size, stage2_selected_top_n, verbose=verbose,
+            chat_history=chat_history
         )
         print(f"\nAssistant: {answer}\n")
+        
+        chat_history.append({"role": "user", "content": user_input})
+        chat_history.append({"role": "assistant", "content": answer})
 
 
 if __name__ == "__main__":
