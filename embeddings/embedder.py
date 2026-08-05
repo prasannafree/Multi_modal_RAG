@@ -63,7 +63,7 @@ class Embedder:
         try:  # dynamic library import
             from sentence_transformers import SentenceTransformer
             self._model = SentenceTransformer(self.model_name, device=self.device)   # initialize the CLIP model
-            self.dimension = self._model.get_sentence_embedding_dimension()          # getting the dimension of the CLIP embeddings (512)
+            self.dimension = self._model.get_embedding_dimension()              # getting the dimension of the CLIP embeddings (512)
             self._initialized = True
             print(f"[Embedder] Loaded CLIP model '{self.model_name}' on device '{self.device}' (dim={self.dimension})")
         except Exception as e:

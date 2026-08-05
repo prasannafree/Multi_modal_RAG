@@ -1,41 +1,52 @@
-# FAISS Vector Database Store Documentation
+# FAISS Vector Database Store & Index Algorithms Documentation
 
-The `vector_store` module manages Stage 2 (**Retrieval System**) vector indexing, metric calculations (Cosine Similarity, Dot Product, L2 Distance), metadata filtering, and FAISS index persistence.
-
----
-
-## 1. Classes Defined
-
-### `SearchResult`
-Dataclass returned by similarity search queries.
-
-* **Attributes**:
-  * `chunk_id` (`str`): ID of retrieved chunk.
-  * `score` (`float`): Similarity score.
-  * `text` (`str`): Chunk text payload.
-  * `metadata` (`Dict[str, Any]`): Enriched chunk metadata.
-* **Methods**:
-  * `to_dict()`: Converts result to dictionary.
+The `vector_store` module manages Stage 2 (**Retrieval System**) vector indexing, search algorithms (**Flat**, **HNSW**, **IVF**), metric calculations, metadata filtering, and disk persistence.
 
 ---
 
-### `FAISSVectorStore`
-FAISS vector database wrapper with metadata payload storage and metadata filtering.
+## 1. Vector Search Algorithms Implemented
 
-* **Initialization Parameters**:
-  * `dimension` (`int`, default `384`): Vector embedding dimension.
-  * `metric` (`str`, default `"cosine"`): Similarity metric (`"cosine"`, `"dot_product"`, `"l2"`).
-* **Methods**:
-  * `add_chunks(chunks: List[Chunk], embeddings: List[List[float]])`: Adds chunks and embedding vectors to FAISS index.
-  * `search(query_vector: List[float], top_k: int = 5, filter_metadata: Optional[Dict[str, Any]] = None) -> List[SearchResult]`: Performs vector similarity search with optional metadata filtering.
-  * `save(dir_path: str)`: Persists FAISS index (`index.faiss`) and payload (`payloads.json`) to disk.
-  * `load(dir_path: str)`: Loads persisted FAISS index and metadata payloads from disk.
+### A. Flat Index (`"flat"`) - Exact Brute-Force Search
+- **Class**: `FlatIndex` ([flat_index.py](file:///home/prasanna/Documents/my_projects/RAG/multi_modal_RAG/vector_store/indexes/flat_index.py))
+- **Underlying FAISS Class**: `faiss.IndexFlatIP` / `faiss.IndexFlatL2`.
+- **Complexity**: $O(N)$ search time.
+- **Characteristics**: Evaluates query against every single vector in the index. Guaranteed **100% recall accuracy** (zero approximation error). Fast for datasets $< 100,000$ vectors.
+
+### B. HNSW Index (`"hnsw"`) - Graph-Based ANN Search
+- **Class**: `HNSWIndex` ([hnsw_index.py](file:///home/prasanna/Documents/my_projects/RAG/multi_modal_RAG/vector_store/indexes/hnsw_index.py))
+- **Underlying FAISS Class**: `faiss.IndexHNSWFlat`.
+- **Complexity**: $O(\log N)$ search time.
+- **Characteristics**: Builds a multi-layer proximity graph (Hierarchical Navigable Small World). Navigates top layers with long-range skips and lower layers with fine-grained neighbor inspection (`efSearch = 64`). Blazing fast for large-scale vector search.
+
+### C. IVF Index (`"ivf"`) - Clustered Voronoi Partition Search
+- **Class**: `IVFIndex` ([ivf_index.py](file:///home/prasanna/Documents/my_projects/RAG/multi_modal_RAG/vector_store/indexes/ivf_index.py))
+- **Underlying FAISS Class**: `faiss.IndexIVFFlat`.
+- **Complexity**: $O(N / K)$ search time.
+- **Characteristics**: Trains $K$ centroid clusters (`nlist`) using K-Means. During query, inspects vectors inside only the closest $N_{\text{probe}}$ clusters (`nprobe = 2`), bypassing the rest of the database.
 
 ---
 
-## 2. Steps Followed in Vector Store Operations
+## 2. Modular Architecture & Extensibility
 
-1. **Indexing**: Converts list of vectors into NumPy `float32` arrays, applies Cosine L2-normalization if enabled, and inserts into FAISS `IndexFlatIP` or `IndexFlatL2`.
-2. **Similarity Querying**: Computes nearest neighbor distances between query vector and indexed chunk vectors.
-3. **Metadata Filtering**: Filters search candidate results matching key-value pairs (e.g. `{"element_type": "table"}`).
-4. **Disk Persistence**: Writes binary FAISS index file and JSON payload dictionary.
+```
+vector_store/indexes/
+├── base.py          # BaseVectorIndex Abstract Class
+├── flat_index.py    # FlatIndex Implementation
+├── hnsw_index.py    # HNSWIndex Implementation
+├── ivf_index.py     # IVFIndex Implementation
+└── factory.py       # Extensible Registry & Factory (create_vector_index)
+```
+
+### Adding New Search Algorithms
+To add a new algorithm (e.g. `LSHIndex` or `PQIndex`):
+1. Subclass `BaseVectorIndex` in a new file inside `vector_store/indexes/`.
+2. Register it in `factory.py`: `register_vector_index("new_algo", NewAlgoClass)`.
+3. Pass `index_type="new_algo"` in `FAISSVectorStore` constructor.
+
+---
+
+## 3. Metadata Over-Fetching & Filtering Algorithm
+
+- **Over-fetching**: When `filter_metadata` is passed to `search()`, the vector store over-fetches candidates ($5 \times \text{top\_k}$) from the FAISS index.
+- **Filtering**: Iterates candidates through `_matches_filter()`, validating metadata key-value pairs before constructing the final `SearchResult` list.
+- **Disk Persistence**: Saves binary vector index to `index.faiss` and JSON metadata payload to `payloads.json`.

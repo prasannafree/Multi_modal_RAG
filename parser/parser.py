@@ -15,7 +15,11 @@ Document -> Extract Text / Tables (Markdown) / Images -> Preserve Layout Order -
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-import fitz  # PyMuPDF
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+
 from PIL import Image as PILImage
 
 
@@ -58,6 +62,11 @@ def parse_pdf(
 
     if output_image_dir:                                           # if user passes a dir_path
         Path(output_image_dir).mkdir(parents=True, exist_ok=True)  # create the output image directory
+
+    if fitz is None:
+        raise ImportError(
+            "PyMuPDF ('fitz') is required to parse PDF files. Install it using: pip install pymupdf (or uv add pymupdf)"
+        )
 
     try:
         doc = fitz.open(str(path))   # open the pdf file using fitz 

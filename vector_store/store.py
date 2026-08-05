@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 from chunker import Chunk
 from similarity_metrics import compute_similarity, cosine_similarity
+from .indexes import BaseVectorIndex, create_vector_index, register_vector_index
 
 
 @dataclass
@@ -41,37 +42,51 @@ class SearchResult:
 
 class FAISSVectorStore:
     """
-    FAISS-backed Vector Database Store with metadata payload persistence and search.
+    FAISS-backed Vector Database Store supporting configurable index algorithms:
+    - 'flat': Exact brute-force search (100% recall)
+    - 'hnsw': Graph-based Approximate Nearest Neighbor search
+    - 'ivf' : Voronoi cluster-partitioned search
     """
 
-    def __init__(self, dimension: int = 384, metric: str = "cosine"):
+    def __init__(
+        self,
+        dimension: int = 512,
+        metric: str = "cosine",
+        index_type: str = "flat",
+    ):
         self.dimension = dimension
         self.metric = metric.lower()
+        self.index_type = index_type.lower().strip()
         self.payloads: List[Dict[str, Any]] = []
         self._faiss = None
-        self.index = None
+        self.vector_index: Optional[BaseVectorIndex] = None
         self._init_faiss_index()
 
     def _init_faiss_index(self):
-        """Initializes the underlying FAISS index."""
+        """Initializes the underlying FAISS index via index factory."""
         try:
             import faiss
             self._faiss = faiss
-
-            if self.metric in ["cosine", "dot_product", "ip"]:
-                # IndexFlatIP handles Inner Product & Cosine Similarity for normalized vectors
-                self.index = faiss.IndexFlatIP(self.dimension)
-            else:
-                # IndexFlatL2 handles Euclidean / L2 distance
-                self.index = faiss.IndexFlatL2(self.dimension)
+            self.vector_index = create_vector_index(
+                index_type=self.index_type,
+                dimension=self.dimension,
+                metric=self.metric,
+            )
         except ImportError:
             print("[Notice] `faiss-cpu` package not found. Falling back to Numpy Vector Store.")
             self._faiss = None
-            self.index = None
+            self.vector_index = None
+
+    @property
+    def index(self):
+        """Exposes raw FAISS index object if present."""
+        if self.vector_index is not None and hasattr(self.vector_index, "index"):
+            return self.vector_index.index
+        return None
 
     def add_chunks(self, chunks: List[Chunk], embeddings: List[List[float]]):
         """
-        Adds RAG chunks and their corresponding embedding vectors to the FAISS index.
+        Adds RAG chunks and their corresponding embedding vectors to the vector index.
         """
         if len(chunks) != len(embeddings):
             raise ValueError("Length of chunks and embeddings must match.")
@@ -87,9 +102,9 @@ class FAISSVectorStore:
             norms[norms == 0] = 1.0
             vecs = vecs / norms
 
-        if self.index is not None:
-            self.index.add(vecs)
-        
+        if self.vector_index is not None:
+            self.vector_index.add(vecs)
+
         for c, vec in zip(chunks, vecs):
             payload_dict = c.to_dict()
             payload_dict["vector"] = vec.tolist()
@@ -99,8 +114,7 @@ class FAISSVectorStore:
         self,
         query_vector: List[float],
         top_k: int = 5,
-        filter_metadata: Optional[Dict[str, Any]] = None,
-    ) -> List[SearchResult]:
+        filter_metadata: Optional[Dict[str, Any]] = None,) -> List[SearchResult]:
         """
         Performs vector similarity search against indexed chunks with optional metadata filtering.
 
@@ -121,11 +135,11 @@ class FAISSVectorStore:
             if norm > 0:
                 q_vec = q_vec / norm
 
-        # 1. Search via FAISS index if available
-        if self.index is not None and self.index.ntotal > 0:
+        # 1. Search via FAISS vector index if available
+        if self.vector_index is not None and self.index is not None and self.index.ntotal > 0:
             # Over-fetch if metadata filtering is requested
             fetch_k = min(self.index.ntotal, top_k * 5 if filter_metadata else top_k)
-            distances, indices = self.index.search(q_vec, fetch_k)
+            distances, indices = self.vector_index.search(q_vec, fetch_k)
 
             results: List[SearchResult] = []
             for dist, idx in zip(distances[0], indices[0]):
@@ -190,8 +204,7 @@ class FAISSVectorStore:
         self,
         query_vec: np.ndarray,
         top_k: int,
-        filter_metadata: Optional[Dict[str, Any]] = None,
-    ) -> List[SearchResult]:
+        filter_metadata: Optional[Dict[str, Any]] = None,) -> List[SearchResult]:
         """Fallback NumPy vector search calculated via similarity_metrics engine."""
         scored_results = []
         for payload in self.payloads:
