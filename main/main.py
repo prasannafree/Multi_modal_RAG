@@ -129,8 +129,13 @@ def answer_query(
             if verbose:
                 print(f"  [Contextual Search] Augmented Query: '{search_query}'")
 
-    # Stage 1: Vector Search
-    query_vec = embedder.embed_text(search_query)
+    # Rewrite the query into a hypothetical image caption to dramatically improve CLIP's vector matching
+    rewritten_query = generator.rewrite_query(search_query)
+    if verbose and rewritten_query != search_query:
+        print(f"  [Query Rewriter] '{search_query}' -> '{rewritten_query}'")
+
+    # Stage 1: Vector Search (using the rewritten query for FAISS)
+    query_vec = embedder.embed_text(rewritten_query)
     candidates = vector_store.search(query_vec, top_k=stage1_pool_size)
 
     if verbose:
@@ -145,9 +150,11 @@ def answer_query(
 
     reranked_results = reranker.rerank(search_query, text_candidates, top_n=stage2_selected_top_n)
 
-    # Inject images back into the results, but ONLY if FAISS (CLIP) thought they were highly relevant
-    # (i.e., they were originally in the top 3 of FAISS search)
-    top_faiss_images = [img for img in image_candidates if candidates.index(img) < stage2_selected_top_n]
+    # Inject images back into the results. Since CLIP (FAISS) is sometimes bad at matching 
+    # conversational questions (like "what car do i have") to images, we pass all image candidates 
+    # retrieved in Stage 1 to the LLM. Vision models like Gemini are extremely smart and will 
+    # simply ignore the irrelevant images (like the bedroom) and find the correct one (the car).
+    top_faiss_images = image_candidates
     for img in reversed(top_faiss_images):
         reranked_results.insert(0, img)
 

@@ -60,6 +60,55 @@ class MultimodalGenerator:
         else:
             return self._generate_fallback(query, prepared_context)
 
+    def rewrite_query(self, query: str) -> str:
+        """
+        Rewrites a conversational query into a descriptive image caption (HyDE) 
+        to improve CLIP vector retrieval accuracy.
+        """
+        prompt = (
+            "You are an expert at searching visual databases. Rewrite the following user "
+            "question into a simple, descriptive caption of the visual object the user is looking for. "
+            "Do not answer the question, just output the short caption. "
+            f"Question: '{query}' -> Caption:"
+        )
+        
+        try:
+            if self.provider == "gemini":
+                try:
+                    from google import genai
+                    client = genai.Client(api_key=self.api_key)
+                    response = client.models.generate_content(
+                        model=self.model_name,
+                        contents=prompt,
+                    )
+                    rewritten = response.text.strip()
+                except ImportError:
+                    import google.generativeai as genai_legacy
+                    genai_legacy.configure(api_key=self.api_key)
+                    model = genai_legacy.GenerativeModel(self.model_name)
+                    response = model.generate_content(prompt)
+                    rewritten = response.text.strip()
+                return rewritten
+                
+            elif self.provider == "ollama":
+                import urllib.request
+                import json
+                endpoint = f"{self.ollama_url}/api/chat"
+                payload = {
+                    "model": self.model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False
+                }
+                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), 
+                                          headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req) as response:
+                    resp_data = json.loads(response.read().decode())
+                    return resp_data.get("message", {}).get("content", query).strip()
+            return query
+        except Exception as e:
+            print(f"[Query Rewriter Error] {e}")
+            return query
+
     # ---- Provider 1: Google Gemini API ----
 
     def _generate_gemini(self, query: str, prepared_context: PreparedContext) -> str:
