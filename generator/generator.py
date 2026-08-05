@@ -134,14 +134,14 @@ class MultimodalGenerator:
         vlm_keywords = ["vision", "llava", "bakllava", "moondream", "minicpm-v"]
         is_vlm = any(kw in target_model.lower() for kw in vlm_keywords)
 
-        # Combine system instructions and user query into a single user prompt
+        # Combine system instructions and user prompt
         # (This avoids HTTP 500 errors on some vision models that crash on explicit 'system' roles)
         sys_instructions = (
-            "You are a helpful conversational RAG assistant. "
-            "You MUST answer the user's question using ONLY the information provided in the CONTEXT below. "
-            "Do NOT use your outside knowledge. "
-            "Answer naturally (e.g. if the document says 'my name is prasanna', you should say 'Your name is Prasanna'). "
-            "If the context does not contain the answer, say 'The provided documents do not contain this information.'\n\n"
+            "You are an intelligent, conversational AI assistant. "
+            "You have been provided with some retrieved context documents below. "
+            "If the context contains relevant information, use it to ground your answer. "
+            "If the context does not contain the answer, you MUST use your own general knowledge to answer the user's question. "
+            "Always answer naturally and helpfully in a conversational tone.\n\n"
         )
         
         combined_prompt = (

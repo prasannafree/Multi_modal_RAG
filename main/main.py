@@ -24,6 +24,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+
 from chunker import chunk_documents
 from context_preparation import ContextPreparation
 from embeddings import Embedder
@@ -130,10 +137,25 @@ def answer_query(
         print(f"  [Retrieval] {len(candidates)} candidates from vector search")
 
     # Stage 2: Cross-Encoder Reranking
-    reranked_results = reranker.rerank(search_query, candidates, top_n=stage2_selected_top_n)
+    # The CrossEncoder is a text-only model. If we pass image chunks to it, it will score them poorly
+    # and drop them because their text is just a placeholder (e.g., "[Image File: images.jpeg]").
+    # To fix this, we separate images, rerank the text, and then add highly-ranked FAISS images back in.
+    image_candidates = [c for c in candidates if c.metadata.get("element_type") == "image"]
+    text_candidates = [c for c in candidates if c.metadata.get("element_type") != "image"]
+
+    reranked_results = reranker.rerank(search_query, text_candidates, top_n=stage2_selected_top_n)
+
+    # Inject images back into the results, but ONLY if FAISS (CLIP) thought they were highly relevant
+    # (i.e., they were originally in the top 3 of FAISS search)
+    top_faiss_images = [img for img in image_candidates if candidates.index(img) < stage2_selected_top_n]
+    for img in reversed(top_faiss_images):
+        reranked_results.insert(0, img)
+
+    # Ensure we don't exceed the top_n limit after injecting images
+    reranked_results = reranked_results[:stage2_selected_top_n]
 
     if verbose:
-        print(f"  [Reranking] Top {len(reranked_results)} results selected")
+        print(f"  [Reranking] Top {len(reranked_results)} results selected (including images)")
         for idx, res in enumerate(reranked_results, start=1):
             meta = res.metadata or {}
             print(f"    #{idx} [Score: {res.score:.4f}] {Path(meta.get('source', 'doc')).name} | {res.text[:80]}...")
@@ -173,7 +195,7 @@ def run_pipeline(
 
     generator = MultimodalGenerator(
         provider=generator_provider,
-        model_name=ollama_model if generator_provider == "ollama" else None,
+        model_name=ollama_model,
         api_key=gemini_api_key,
     )
     reranker = Reranker()
@@ -219,7 +241,7 @@ def run_chat(
     # Initialize generator and reranker once
     generator = MultimodalGenerator(
         provider=generator_provider,
-        model_name=ollama_model if generator_provider == "ollama" else None,
+        model_name=ollama_model,
         api_key=gemini_api_key,
     )
     reranker = Reranker()
