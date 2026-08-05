@@ -60,6 +60,54 @@ class MultimodalGenerator:
         else:
             return self._generate_fallback(query, prepared_context)
 
+    def rewrite_query(self, query: str) -> str:
+        """
+        Rewrites a conversational query into a descriptive image caption (HyDE) 
+        to improve CLIP vector retrieval accuracy.
+        """
+        prompt = (
+            "You are an expert at searching visual databases. Rewrite the following user "
+            "question into a simple, descriptive caption of the visual object the user is looking for. "
+            "Do not answer the question, just output the short caption. "
+            f"Question: '{query}' -> Caption:"
+        )
+        
+        try:
+            if self.provider == "gemini":
+                try:
+                    from google import genai
+                    client = genai.Client(api_key=self.api_key)
+                    response = client.models.generate_content(
+                        model=self.model_name,
+                        contents=prompt,
+                    )
+                    rewritten = response.text.strip()
+                except ImportError:
+                    import google.generativeai as genai_legacy
+                    genai_legacy.configure(api_key=self.api_key)
+                    model = genai_legacy.GenerativeModel(self.model_name)
+                    response = model.generate_content(prompt)
+                    rewritten = response.text.strip()
+                return rewritten
+                
+            elif self.provider == "ollama":
+                import urllib.request
+                import json
+                endpoint = f"{self.ollama_url}/api/chat"
+                payload = {
+                    "model": self.model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False
+                }
+                req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), 
+                                          headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req) as response:
+                    resp_data = json.loads(response.read().decode())
+                    return resp_data.get("message", {}).get("content", query).strip()
+            return query
+        except Exception:
+            return query
+
     # ---- Provider 1: Google Gemini API ----
 
     def _generate_gemini(self, query: str, prepared_context: PreparedContext) -> str:
@@ -124,7 +172,7 @@ class MultimodalGenerator:
 
     # ---- Provider 2: Local Ollama VLM ----
 
-    def _generate_ollama(self, query: str, prepared_context: PreparedContext) -> str:
+    def _generate_ollama(self, query: str, prepared_context: PreparedContext, chat_history: List[Dict[str, str]] = None) -> str:
         """Generates response using Local Ollama server (e.g. llama3.1:8b, qwen3:8b)."""
         target_model = self.model_name
         if ":" not in target_model and not target_model.endswith(":latest"):
@@ -134,16 +182,18 @@ class MultimodalGenerator:
         vlm_keywords = ["vision", "llava", "bakllava", "moondream", "minicpm-v"]
         is_vlm = any(kw in target_model.lower() for kw in vlm_keywords)
 
-        # System prompt forces the model to answer ONLY from retrieved context
-        system_prompt = (
-            "You are a helpful RAG (Retrieval-Augmented Generation) assistant. "
-            "You MUST answer the user's question using ONLY the information provided in the CONTEXT below. "
-            "Do NOT use your own knowledge or training data. "
-            "If the answer is found in the context, provide it clearly and cite the source. "
-            "If the context does not contain the answer, say 'The provided documents do not contain this information.'"
+        # Combine system instructions and user prompt
+        # (This avoids HTTP 500 errors on some vision models that crash on explicit 'system' roles)
+        sys_instructions = (
+            "You are an intelligent, conversational AI assistant. "
+            "You have been provided with some retrieved context documents below. "
+            "If the context contains relevant information, use it to ground your answer. "
+            "If the context does not contain the answer, you MUST use your own general knowledge to answer the user's question. "
+            "Always answer naturally and helpfully in a conversational tone.\n\n"
         )
-
-        user_prompt = (
+        
+        combined_prompt = (
+            sys_instructions +
             f"CONTEXT (retrieved from documents):\n"
             f"---\n"
             f"{prepared_context.formatted_text}\n"
@@ -174,11 +224,13 @@ class MultimodalGenerator:
 
             endpoint = f"{self.ollama_url}/api/chat"
 
-            # Build messages with system + user roles
-            messages = [
-                {"role": "system", "content": system_prompt},
-            ]
-            user_msg: Dict[str, Any] = {"role": "user", "content": user_prompt}
+            # Build messages array starting with history, then current prompt
+            messages = []
+            if chat_history:
+                messages.extend(chat_history)
+            
+            # Build current user message
+            user_msg: Dict[str, Any] = {"role": "user", "content": combined_prompt}
             if images_b64:
                 user_msg["images"] = images_b64
             messages.append(user_msg)
@@ -207,8 +259,7 @@ class MultimodalGenerator:
                 gen_endpoint = f"{self.ollama_url}/api/generate"
                 gen_payload = {
                     "model": target_model,
-                    "system": system_prompt,
-                    "prompt": user_prompt,
+                    "prompt": combined_prompt,
                     "stream": False,
                 }
                 if images_b64:

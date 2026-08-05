@@ -24,6 +24,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+
 from chunker import chunk_documents
 from context_preparation import ContextPreparation
 from embeddings import Embedder
@@ -107,34 +114,82 @@ def answer_query(
     stage1_pool_size: int = 10,
     stage2_selected_top_n: int = 3,
     verbose: bool = False,
+    chat_history: List[Dict[str, str]] = None,
 ) -> str:
     """
     Runs retrieval, reranking, context preparation, and generation for a single query.
     Returns the generated answer string.
     """
-    # Stage 1: Vector Search
-    query_vec = embedder.embed_text(query)
-    candidates = vector_store.search(query_vec, top_k=stage1_pool_size)
+    # Create a context-aware search query to fix retrieval for follow-up questions
+    search_query = query
+    if chat_history:
+        last_user_msg = next((msg["content"] for msg in reversed(chat_history) if msg["role"] == "user"), "")
+        if last_user_msg:
+            search_query = f"{last_user_msg} | {query}"
+            if verbose:
+                print(f"  [Contextual Search] Augmented Query: '{search_query}'")
 
+    # Rewrite the query into a hypothetical image caption to dramatically improve CLIP's vector matching
+    rewritten_query = generator.rewrite_query(search_query)
+    if verbose and rewritten_query != search_query:
+        print(f"  [Query Rewriter] '{search_query}' -> '{rewritten_query}'")
+
+    # Stage 1: Dual Vector Search 
+    # (1) Search with the original query (best for finding text documents like your .md file)
+    query_vec_text = embedder.embed_text(search_query)
+    candidates = vector_store.search(query_vec_text, top_k=stage1_pool_size)
+    
+    # (2) Search with the rewritten query (best for finding images like the car)
+    if rewritten_query != search_query:
+        query_vec_img = embedder.embed_text(rewritten_query)
+        candidates_img = vector_store.search(query_vec_img, top_k=stage1_pool_size)
+        # Merge and deduplicate
+        seen_ids = {c.chunk_id for c in candidates}
+        for c in candidates_img:
+            if c.chunk_id not in seen_ids:
+                seen_ids.add(c.chunk_id)
+                candidates.append(c)
     if verbose:
         print(f"  [Retrieval] {len(candidates)} candidates from vector search")
 
     # Stage 2: Cross-Encoder Reranking
-    reranked_results = reranker.rerank(query, candidates, top_n=stage2_selected_top_n)
+    # The CrossEncoder is a text-only model. If we pass image chunks to it, it will score them poorly
+    # and drop them because their text is just a placeholder (e.g., "[Image File: images.jpeg]").
+    # To fix this, we separate images, rerank the text, and then add highly-ranked FAISS images back in.
+    image_candidates = [c for c in candidates if c.metadata.get("element_type") == "image"]
+    text_candidates = [c for c in candidates if c.metadata.get("element_type") != "image"]
+
+    reranked_results = reranker.rerank(search_query, text_candidates, top_n=stage2_selected_top_n)
+
+    # Inject images back into the results. Since CLIP (FAISS) is sometimes bad at matching 
+    # conversational questions (like "what car do i have") to images, we pass all image candidates 
+    # retrieved in Stage 1 to the LLM. Vision models like Gemini are extremely smart and will 
+    # simply ignore the irrelevant images (like the bedroom) and find the correct one (the car).
+    top_faiss_images = image_candidates
+    for img in reversed(top_faiss_images):
+        reranked_results.insert(0, img)
+
+    # Ensure we don't exceed the top_n limit after injecting images
+    reranked_results = reranked_results[:stage2_selected_top_n]
 
     if verbose:
-        print(f"  [Reranking] Top {len(reranked_results)} results selected")
+        print(f"  [Reranking] Top {len(reranked_results)} results selected (including images)")
         for idx, res in enumerate(reranked_results, start=1):
             meta = res.metadata or {}
             print(f"    #{idx} [Score: {res.score:.4f}] {Path(meta.get('source', 'doc')).name} | {res.text[:80]}...")
 
     # Context Preparation
     context_prep = ContextPreparation(max_context_length=4000, include_metadata_header=True)
-    prepared_context = context_prep.prepare(query, reranked_results)
+    prepared_context = context_prep.prepare(search_query, reranked_results)
 
     # LLM Generation
-    answer = generator.generate(query, prepared_context)
+    # We use a hacky patch here to pass chat history without breaking other providers for now
+    if hasattr(generator, "_generate_ollama") and generator.provider == "ollama":
+        answer = generator._generate_ollama(query, prepared_context, chat_history=chat_history)
+    else:
+        answer = generator.generate(query, prepared_context)
     return answer
+
 
 
 # ---- Single-Shot Pipeline (original behavior) ----
@@ -158,7 +213,7 @@ def run_pipeline(
 
     generator = MultimodalGenerator(
         provider=generator_provider,
-        model_name=ollama_model if generator_provider == "ollama" else None,
+        model_name=ollama_model,
         api_key=gemini_api_key,
     )
     reranker = Reranker()
@@ -204,7 +259,7 @@ def run_chat(
     # Initialize generator and reranker once
     generator = MultimodalGenerator(
         provider=generator_provider,
-        model_name=ollama_model if generator_provider == "ollama" else None,
+        model_name=ollama_model,
         api_key=gemini_api_key,
     )
     reranker = Reranker()
@@ -220,6 +275,8 @@ def run_chat(
     print(f"  Ready! Provider: {generator_provider.upper()} | Model: {ollama_model}")
     print("  Type your questions below. Type 'quit' or 'exit' to stop.")
     print("==================================================================\n")
+
+    chat_history = []
 
     while True:
         try:
@@ -237,8 +294,12 @@ def run_chat(
         answer = answer_query(
             user_input, embedder, vector_store, generator, reranker,
             stage1_pool_size, stage2_selected_top_n, verbose=verbose,
+            chat_history=chat_history
         )
         print(f"\nAssistant: {answer}\n")
+        
+        chat_history.append({"role": "user", "content": user_input})
+        chat_history.append({"role": "assistant", "content": answer})
 
 
 if __name__ == "__main__":
@@ -287,7 +348,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pool-size",
         type=int,
-        default=10,
+        default=30,
         help="Stage 1 candidate pool size"
     )
     parser.add_argument(

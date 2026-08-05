@@ -1,0 +1,51 @@
+
+
+
+Multi-Agent Systems, Control and Learning  - cps - aug 4 
+Control Systems Design  - cps - aug 4 
+Dynamics of Linear Systems  - cps - aug 4 
+Operations Research for Mobility Management - aug -6 
+Random Processes - ECE - aug4 
+
+
+
+Computational Methods in Optimization - csa - 4 - 
+Probability and statistics - csa - 4 
+Applied Linear Algebra and Optimization - csa - 3 - aug 5 
+Deep Learning for Natural Language Processing - csa - 4 - aug 6 
+Advanced Techniques in Compilation and Programming for Parallel Architectures - csa - 4 - aug 6 
+Topics in Combinatorial Optimization - csa - 4 - aug 6 
+
+Advanced Deep Representation Learning - ECE - 4 - aug 5 
+Digital Image Processing - ECE - 3 - aug 
+Random Processes - ECE - aug 4 ( 2 pm ) 
+
+
+Linear Algebra And Its Applications - 4 - aug 4 
+Stochastic Models And Applications - 3 - aug 3 
+Digital Image Processing - 3 - aug 5 
+
+
+Design  of internet of things - DESE 
+Embeded system design - DESE 
+introduction to machine learning - DESE  - aug 4 
+mechatronics system design - DESE 
+
+
+
+Numerical Linear Algebra - cds - aug 6 
+Introduction to Data Science - cds - aug 6 
+
+%------------------------------------------------------------------------------------------------------%
+
+design of cps 
+Multi-Agent Systems, Control and Learning
+introduction to data science --cds - aug 6 
+Operations Research for Mobility Management - aug -6
+
+
+Applied Linear Algebra and Optimization - csa - 3 - aug 5
+
+
+
+
