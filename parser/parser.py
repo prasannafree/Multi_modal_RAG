@@ -22,6 +22,22 @@ except ImportError:
 
 from PIL import Image as PILImage
 
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
+
+def extract_ocr_text(image_path: Union[str, Path]) -> Optional[str]:
+    """Helper function to run Tesseract OCR on an image file."""
+    if pytesseract is None:
+        return None
+    try:
+        text = pytesseract.image_to_string(PILImage.open(image_path)).strip()
+        return text if text else None
+    except Exception as e:
+        print(f"[OCR Warning] Failed to run OCR on {image_path}: {e}")
+        return None
+
 
 @dataclass
 class Document:
@@ -158,6 +174,21 @@ def parse_pdf(
                         },
                     )
                     page_elements.append((9999 + img_idx, 0, doc_item))
+                    
+                    if saved_path:
+                        ocr_text = extract_ocr_text(saved_path)
+                        if ocr_text:
+                            ocr_doc_item = Document(
+                                page_content=f"[OCR Extracted from Image: {img_name}]\n{ocr_text}",
+                                metadata={
+                                    "source": abs_path_str,
+                                    "page": page_num,
+                                    "element_type": "ocr_text",
+                                    "image_path": saved_path,
+                                },
+                            )
+                            page_elements.append((9999 + img_idx, 1, ocr_doc_item))
+                            
             except Exception as e:
                 print(f"[Warning] Image extraction failed on page {page_num}: {e}")
 
@@ -267,6 +298,21 @@ def parse_docx(
                     )
                     documents.append(doc_item)
                     layout_idx += 1
+                    
+                    ocr_text = extract_ocr_text(str(save_file))
+                    if ocr_text:
+                        ocr_doc_item = Document(
+                            page_content=f"[OCR Extracted from Image: {img_filename}]\n{ocr_text}",
+                            metadata={
+                                "source": abs_path_str,
+                                "element_type": "ocr_text",
+                                "image_path": str(save_file),
+                                "layout_order": layout_idx,
+                            },
+                        )
+                        documents.append(ocr_doc_item)
+                        layout_idx += 1
+                        
         except Exception as e:
             print(f"[Warning] DOCX image extraction warning: {e}")
 
@@ -404,8 +450,24 @@ def parse_image(
         },
     )
 
+    ocr_text = extract_ocr_text(abs_path_str)
+
     if to_dict:
+        if ocr_text:
+            ocr_doc = Document(
+                page_content=f"[OCR Extracted from Image: {path.name}]\n{ocr_text}",
+                metadata={"source": abs_path_str, "element_type": "ocr_text"}
+            ).to_dict()
+            return [doc_item.to_dict(), ocr_doc]
         return doc_item.to_dict()
+        
+    if ocr_text:
+        ocr_doc = Document(
+            page_content=f"[OCR Extracted from Image: {path.name}]\n{ocr_text}",
+            metadata={"source": abs_path_str, "element_type": "ocr_text"}
+        )
+        return [doc_item, ocr_doc]
+        
     return doc_item
 
 
