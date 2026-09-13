@@ -417,7 +417,7 @@ def parse_md(
 def parse_image(
     file_path: Union[str, Path],
     description: Optional[str] = None,
-    to_dict: bool = False,) -> Union[Document, Dict[str, Any]]:
+    to_dict: bool = False,) -> Union[List[Document], List[Dict[str, Any]]]:
     """
     Parses a standalone image file (PNG, JPG, WEBP, BMP, TIFF, etc.) into a structured RAG Document.
     """
@@ -452,23 +452,17 @@ def parse_image(
 
     ocr_text = extract_ocr_text(abs_path_str)
 
-    if to_dict:
-        if ocr_text:
-            ocr_doc = Document(
-                page_content=f"[OCR Extracted from Image: {path.name}]\n{ocr_text}",
-                metadata={"source": abs_path_str, "element_type": "ocr_text"}
-            ).to_dict()
-            return [doc_item.to_dict(), ocr_doc]
-        return doc_item.to_dict()
-        
+    documents = [doc_item]
     if ocr_text:
         ocr_doc = Document(
             page_content=f"[OCR Extracted from Image: {path.name}]\n{ocr_text}",
             metadata={"source": abs_path_str, "element_type": "ocr_text"}
         )
-        return [doc_item, ocr_doc]
-        
-    return doc_item
+        documents.append(ocr_doc)
+
+    if to_dict:
+        return [d.to_dict() for d in documents]
+    return documents
 
 
 def parse_file(

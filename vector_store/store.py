@@ -187,7 +187,12 @@ class FAISSVectorStore:
 
         index_path = folder / "index.faiss"
         if self._faiss is not None and index_path.exists():
-            self.index = self._faiss.read_index(str(index_path))
+            loaded_index = self._faiss.read_index(str(index_path))
+            if self.vector_index is not None:
+                self.vector_index.index = loaded_index
+            else:
+                # If vector_index wrapper wasn't initialized, store raw index
+                self._raw_index = loaded_index
 
         payload_path = folder / "payloads.json"
         if payload_path.exists():

@@ -79,7 +79,7 @@ class MultimodalChunker:
         for doc in doc_objects:
             element_type = doc.metadata.get("element_type", "text")
 
-            if element_type in ["text", "heading", "header"]:
+            if element_type in ["text", "heading", "header", "ocr_text"]:
                 produced = self._chunk_text(doc)
             elif element_type == "table":
                 produced = self._chunk_table(doc)
@@ -175,7 +175,15 @@ class MultimodalChunker:
         meta["char_count"] = len(text)
         meta["word_count"] = len(text.split())
         meta["sub_chunk_index"] = sub_idx
-        meta["chunk_strategy"] = self.text_strategy if meta.get("element_type") == "text" else self.table_strategy
+        elem = meta.get("element_type", "text")
+        if elem in ("text", "heading", "header", "ocr_text"):
+            meta["chunk_strategy"] = self.text_strategy
+        elif elem == "table":
+            meta["chunk_strategy"] = self.table_strategy
+        elif elem == "image":
+            meta["chunk_strategy"] = self.image_strategy
+        else:
+            meta["chunk_strategy"] = self.text_strategy
 
         return Chunk(
             chunk_id="",

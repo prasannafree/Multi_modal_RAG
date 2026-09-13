@@ -199,7 +199,8 @@ def run_pipeline(
     bucket_dir: Union[str, Path] = None,
     generator_provider: str = "fallback",  # 'gemini' | 'ollama' | 'fallback'
     gemini_api_key: Optional[str] = None,
-    ollama_model: str = "llama3.2-vision",
+    ollama_model: str = "llama3.1:8b",
+    gemini_model: str = "gemini-2.0-flash",
     selected_metric: str = "cosine",        # 'cosine' | 'dot_product' | 'l2' | 'l1'
     selected_index_type: str = "hnsw",      # 'flat' | 'hnsw' | 'ivf'
     stage1_pool_size: int = 10,
@@ -211,9 +212,17 @@ def run_pipeline(
 
     embedder, vector_store = build_index(bucket_dir, selected_metric, selected_index_type)
 
+    # Route model name based on provider
+    if generator_provider == "gemini":
+        model_name = gemini_model
+    elif generator_provider == "ollama":
+        model_name = ollama_model
+    else:
+        model_name = None
+
     generator = MultimodalGenerator(
         provider=generator_provider,
-        model_name=ollama_model,
+        model_name=model_name,
         api_key=gemini_api_key,
     )
     reranker = Reranker()
@@ -238,6 +247,7 @@ def run_chat(
     generator_provider: str = "ollama",
     gemini_api_key: Optional[str] = None,
     ollama_model: str = "llama3.1:8b",
+    gemini_model: str = "gemini-2.0-flash",
     selected_metric: str = "cosine",
     selected_index_type: str = "hnsw",
     stage1_pool_size: int = 10,
@@ -256,10 +266,18 @@ def run_chat(
     # Phase 1: Build index once
     embedder, vector_store = build_index(bucket_dir, selected_metric, selected_index_type)
 
+    # Route model name based on provider
+    if generator_provider == "gemini":
+        model_name = gemini_model
+    elif generator_provider == "ollama":
+        model_name = ollama_model
+    else:
+        model_name = None
+
     # Initialize generator and reranker once
     generator = MultimodalGenerator(
         provider=generator_provider,
-        model_name=ollama_model,
+        model_name=model_name,
         api_key=gemini_api_key,
     )
     reranker = Reranker()
@@ -272,7 +290,7 @@ def run_chat(
     )
 
     print("\n==================================================================")
-    print(f"  Ready! Provider: {generator_provider.upper()} | Model: {ollama_model}")
+    print(f"  Ready! Provider: {generator_provider.upper()} | Model: {model_name or 'fallback'}")
     print("  Type your questions below. Type 'quit' or 'exit' to stop.")
     print("==================================================================\n")
 
@@ -332,6 +350,12 @@ if __name__ == "__main__":
         help="Ollama Local Model Name (e.g., 'llama3.1:8b', 'qwen3:8b', 'gemma3:4b')"
     )
     parser.add_argument(
+        "--gemini-model",
+        type=str,
+        default="gemini-2.0-flash",
+        help="Google Gemini Model Name (e.g., 'gemini-2.0-flash', 'gemini-2.5-pro')"
+    )
+    parser.add_argument(
         "--metric",
         type=str,
         default="cosine",
@@ -370,6 +394,7 @@ if __name__ == "__main__":
         run_chat(
             generator_provider=args.provider,
             ollama_model=args.model,
+            gemini_model=args.gemini_model,
             selected_metric=args.metric,
             selected_index_type=args.index,
             stage1_pool_size=args.pool_size,
@@ -381,6 +406,7 @@ if __name__ == "__main__":
             query=args.query,
             generator_provider=args.provider,
             ollama_model=args.model,
+            gemini_model=args.gemini_model,
             selected_metric=args.metric,
             selected_index_type=args.index,
             stage1_pool_size=args.pool_size,

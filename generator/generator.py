@@ -36,7 +36,7 @@ class MultimodalGenerator:
         if model_name:
             self.model_name = model_name
         elif self.provider == "gemini":
-            self.model_name = "gemini-1.5-flash"
+            self.model_name = "gemini-2.0-flash"
         elif self.provider == "ollama":
             self.model_name = "llama3.1:8b"
         else:

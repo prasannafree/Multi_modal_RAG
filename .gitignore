@@ -8,3 +8,22 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Environment variables (contains API keys)
+.env
+
+# Extracted images from parsing
+bucket/extracted_images/
+
+# FAISS index files
+vector_store/indexes/*.faiss
+*.faiss
+payloads.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
