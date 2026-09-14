@@ -16,6 +16,8 @@ dependencies = [
     "google-generativeai>=0.4.0",
     "google-genai>=1.0.0",
     "pytesseract>=0.3.10",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -29,6 +31,7 @@ packages = [
     "context_preparation",
     "generator",
     "main",
+    "rag_agent",
 ]
 
 [build-system]

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RAG Sub-Agent Configuration File.
+
+  Edit this file to change the LLM provider, model, API keys,
+  retrieval parameters, and server settings without touching code.
+-->
+<rag_agent_config>
+
+  <!-- ======================== Server Settings ======================== -->
+  <server>
+    <host>0.0.0.0</host>
+    <port>8100</port>
+  </server>
+
+  <!-- ======================== LLM Provider =========================== -->
+  <!-- Supported providers: 'ollama' | 'gemini' | 'fallback'            -->
+  <llm>
+    <provider>ollama</provider>
+
+    <!-- Ollama (Local LLM) Settings -->
+    <ollama>
+      <model>qwen3.6:27b</model>
+      <url>http://localhost:11434</url>
+    </ollama>
+
+    <!-- Google Gemini (Cloud API) Settings -->
+    <gemini>
+      <model>gemini-2.0-flash</model>
+      <!-- Set your API key here OR use the GEMINI_API_KEY environment variable -->
+      <api_key></api_key>
+    </gemini>
+  </llm>
+
+  <!-- ======================== Retrieval Settings ===================== -->
+  <retrieval>
+    <!-- Similarity metric: 'cosine' | 'dot_product' | 'l2' | 'l1' -->
+    <metric>cosine</metric>
+    <!-- FAISS index algorithm: 'flat' | 'hnsw' | 'ivf' -->
+    <index_type>hnsw</index_type>
+    <!-- Number of candidates fetched from FAISS in Stage 1 -->
+    <stage1_pool_size>30</stage1_pool_size>
+    <!-- Number of top results kept after Stage 2 Cross-Encoder reranking -->
+    <stage2_top_n>3</stage2_top_n>
+  </retrieval>
+
+  <!-- ======================== Document Bucket ======================== -->
+  <documents>
+    <!-- Path to the document repository (relative to project root) -->
+    <bucket_dir>bucket</bucket_dir>
+  </documents>
+
+</rag_agent_config>
