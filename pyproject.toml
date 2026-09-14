@@ -18,6 +18,7 @@ dependencies = [
     "pytesseract>=0.3.10",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
+    "byaldi>=0.0.3",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -3,7 +3,15 @@ FAISS Vector Database Store & Search Module.
 
 Provides fast local vector indexing, metadata payload storage, metric selection 
 (Cosine Similarity, Dot Product, L2 Euclidean Distance), and metadata filtering.
+
+the vectord lives entirely in computer's RAM during runtime for maximum speed 
+
+
 """
+
+
+
+
 
 from dataclasses import dataclass, field
 import json

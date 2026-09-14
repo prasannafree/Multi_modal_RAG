@@ -179,7 +179,7 @@ class MultimodalGenerator:
             target_model = f"{target_model}:latest"
 
         # Detect if model supports vision (VLM) based on model name
-        vlm_keywords = ["vision", "llava", "bakllava", "moondream", "minicpm-v"]
+        vlm_keywords = ["vision", "llava", "bakllava", "moondream", "minicpm-v", "qwen"]
         is_vlm = any(kw in target_model.lower() for kw in vlm_keywords)
 
         # Combine system instructions and user prompt
